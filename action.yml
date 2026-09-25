@@ -1,0 +1,82 @@
+name: "OSS Contributions Card"
+description: "Animated SVG cards of your merged and in-review pull requests to other people's repositories, found automatically"
+author: "Sagargupta16"
+
+branding:
+  icon: "git-pull-request"
+  color: "blue"
+
+inputs:
+  username:
+    description: "GitHub login whose pull requests are counted"
+    required: false
+    default: ${{ github.repository_owner }}
+  token:
+    description: "Token for the GitHub GraphQL API. The default workflow token can read public pull requests"
+    required: false
+    default: ${{ github.token }}
+  exclude-owners:
+    description: "Comma-separated repository owners to leave out, for example your own organizations"
+    required: false
+    default: ""
+  exclude-repos:
+    description: "Comma-separated repositories to leave out, as owner/repo, or owner/* for every repository of an owner. Case-insensitive"
+    required: false
+    default: ""
+  output-summary:
+    description: "Path of the summary card. An empty string skips it"
+    required: false
+    default: "assets/oss.svg"
+  output-merged:
+    description: "Path of the merged list card. An empty string skips it"
+    required: false
+    default: "assets/oss-merged.svg"
+  output-review:
+    description: "Path of the in-review card. An empty string skips it"
+    required: false
+    default: "assets/oss-review.svg"
+  max-rows:
+    description: "Most rows on each list card; the rest are summed in a footer line"
+    required: false
+    default: "12"
+  accent:
+    description: "Hex color for the summary card's heading and project chips, for example #a78bfa. Empty keeps the stock blue"
+    required: false
+    default: ""
+
+outputs:
+  merged:
+    description: "Merged pull requests counted"
+    value: ${{ steps.render.outputs.merged }}
+  open:
+    description: "Open pull requests counted"
+    value: ${{ steps.render.outputs.open }}
+  projects:
+    description: "Repositories with at least one merged pull request"
+    value: ${{ steps.render.outputs.projects }}
+  stars:
+    description: "Combined stars of those repositories"
+    value: ${{ steps.render.outputs.stars }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.13"
+
+    - name: Render the OSS contribution cards
+      id: render
+      shell: bash
+      env:
+        OSS_USERNAME: ${{ inputs.username }}
+        GITHUB_TOKEN: ${{ inputs.token }}
+        OSS_EXCLUDE_OWNERS: ${{ inputs.exclude-owners }}
+        OSS_EXCLUDE_REPOS: ${{ inputs.exclude-repos }}
+        OSS_OUTPUT_SUMMARY: ${{ inputs.output-summary }}
+        OSS_OUTPUT_MERGED: ${{ inputs.output-merged }}
+        OSS_OUTPUT_REVIEW: ${{ inputs.output-review }}
+        OSS_MAX_ROWS: ${{ inputs.max-rows }}
+        OSS_ACCENT: ${{ inputs.accent }}
+      run: python "${{ github.action_path }}/oss_contributions_card.py"

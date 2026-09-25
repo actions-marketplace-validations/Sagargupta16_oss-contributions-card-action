@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      # Pinned by hand: Renovate does not read versions inside a `run:` block.
+      - name: Install ruff
+        run: "pip install --only-binary :all: ruff==0.16.6"
+      - name: Lint
+        run: ruff check .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.13 is what action.yml installs for consumers, so it must be covered.
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install pytest
+        run: "pip install --only-binary :all: pytest==9.1.1"
+      - name: Test
+        run: pytest -v
+
+  action:
+    # The only job that runs action.yml itself, against the live search API.
+    # Lint and test never load it, so a broken output mapping or input default
+    # would leave both of them green.
+    runs-on: ubuntu-latest
+    env:
+      # One-line list PRs; the last step checks none of them reaches a card.
+      EXCLUDE_REPOS: "firstcontributions/first-contributions,emmabostian/developer-portfolios,is-a-dev/register,ossamamehmood/Hacktoberfest,SimplifyJobs/Summer2027-Internships"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run the action from this checkout
+        id: cards
+        uses: ./
+        with:
+          username: Sagargupta16
+          token: ${{ github.token }}
+          exclude-owners: MCA-NITW
+          exclude-repos: ${{ env.EXCLUDE_REPOS }}
+
+      - name: Assert the cards exist and parse and every output resolved
+        env:
+          MERGED: ${{ steps.cards.outputs.merged }}
+          OPEN: ${{ steps.cards.outputs.open }}
+          PROJECTS: ${{ steps.cards.outputs.projects }}
+          STARS: ${{ steps.cards.outputs.stars }}
+        run: |
+          set -euo pipefail
+          echo "merged=$MERGED open=$OPEN projects=$PROJECTS stars=$STARS"
+          for pair in "merged=$MERGED" "open=$OPEN" "projects=$PROJECTS" "stars=$STARS"; do
+            case "${pair#*=}" in
+              ''|*[!0-9]*) echo "::error::output ${pair%%=*} is not a number: '${pair#*=}'"; exit 1 ;;
+            esac
+          done
+          python - <<'EOF'
+          import xml.etree.ElementTree as ET
+          for path in ("assets/oss.svg", "assets/oss-merged.svg", "assets/oss-review.svg"):
+              root = ET.parse(path).getroot()
+              assert root.tag == "{http://www.w3.org/2000/svg}svg", path
+              assert root.get("role") == "img" and root.get("aria-label"), path
+              print(f"{path}: valid SVG, {root.get('width')}x{root.get('height')}")
+          EOF
+          for repo in ${EXCLUDE_REPOS//,/ }; do
+            if grep -qiF "$repo" assets/oss.svg assets/oss-merged.svg assets/oss-review.svg; then
+              echo "::error::$repo is in exclude-repos but still appears on a card"
+              exit 1
+            fi
+          done
+          echo "No excluded repository appears on any card."
